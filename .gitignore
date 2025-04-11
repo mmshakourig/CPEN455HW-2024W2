@@ -7,6 +7,8 @@ data/MNIST
 data/Imagenet*
 samples/*.jpg
 
+projvenv
+test.ipynb
 # Created by https://www.toptal.com/developers/gitignore/api/macos,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,visualstudiocode,python
 
