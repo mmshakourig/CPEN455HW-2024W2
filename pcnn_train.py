@@ -22,23 +22,41 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
         
     deno =  args.batch_size * np.prod(args.obs) * np.log(2.)        
     loss_tracker = mean_tracker()
+    val_acc_tracker = mean_tracker()
     
-    for batch_idx, item in enumerate(tqdm(data_loader)):
-        model_input, _ = item
+    for _, item in enumerate(tqdm(data_loader)):
+        model_input, labels = item
         model_input = model_input.to(device)
-        model_output = model(model_input)
-        loss = loss_op(model_input, model_output)
-        loss_tracker.update(loss.item()/deno)
-        if mode == 'training':
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        
+        # Check if the model is in training mode or test mode
+        if mode == 'test':
+            losses, label_preds = model.infer_img(model_input, device)
+            loss_tracker.update(torch.sum(losses).item()/deno)
+        else:
+            labels = torch.tensor([my_bidict[item] for item in labels])
+            labels = labels.to(device)
+
+            model_output = model(model_input, labels)
+            loss = loss_op(model_input, model_output)
+            loss_tracker.update(loss.item()/deno)
+
+            if mode == 'training':
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            else:
+                _, label_preds = model.infer_img(model_input, device)
+                val_acc_tracker.update(torch.sum(label_preds == labels).item()/args.batch_size)
         
     if args.en_wandb:
         wandb.log({mode + "-Average-BPD" : loss_tracker.get_mean()})
         wandb.log({mode + "-epoch": epoch})
+        if mode == 'val':
+            wandb.log({"val-Accuracy": val_acc_tracker.get_mean()})
 
 if __name__ == '__main__':
+    print("Training PCNN Model-V1")
+    
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-w', '--en_wandb', type=bool, default=False,
@@ -66,11 +84,11 @@ if __name__ == '__main__':
                         help='Observation shape')
     
     # model
-    parser.add_argument('-q', '--nr_resnet', type=int, default=1,
+    parser.add_argument('-q', '--nr_resnet', type=int, default=5,
                         help='Number of residual blocks per stage of the model')
-    parser.add_argument('-n', '--nr_filters', type=int, default=40,
+    parser.add_argument('-n', '--nr_filters', type=int, default=160,
                         help='Number of filters to use across the model. Higher = larger model.')
-    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=5,
+    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=10,
                         help='Number of logistic components in the mixture. Higher = more flexible model')
     parser.add_argument('-l', '--lr', type=float,
                         default=0.0002, help='Base learning rate')
@@ -123,6 +141,8 @@ if __name__ == '__main__':
     #In order to avoid pickling errors with the dataset on different machines, we set num_workers to 0.
     #If you are using ubuntu/linux/colab, and find that loading data is too slow, you can set num_workers to 1 or even bigger.
     kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':True}
+    # confirm the device
+    print('Using device:', device)
 
     # set data
     if "mnist" in args.dataset:
@@ -180,8 +200,10 @@ if __name__ == '__main__':
     loss_op   = lambda real, fake : discretized_mix_logistic_loss(real, fake)
     sample_op = lambda x : sample_from_discretized_mix_logistic(x, args.nr_logistic_mix)
 
+    num_classes = len(my_bidict)
+
     model = PixelCNN(nr_resnet=args.nr_resnet, nr_filters=args.nr_filters, 
-                input_channels=input_channels, nr_logistic_mix=args.nr_logistic_mix)
+                input_channels=input_channels, nr_logistic_mix=args.nr_logistic_mix, num_classes=num_classes)
     model = model.to(device)
 
     if args.load_params:
@@ -223,7 +245,8 @@ if __name__ == '__main__':
         
         if epoch % args.sampling_interval == 0:
             print('......sampling......')
-            sample_t = sample(model, args.sample_batch_size, args.obs, sample_op)
+            labels = torch.randint(0, num_classes, (args.sample_batch_size,)).to(next(model.parameters()).device)
+            sample_t = sample(model, args.sample_batch_size, args.obs, sample_op, labels=labels)
             sample_t = rescaling_inv(sample_t)
             save_images(sample_t, args.sample_dir)
             sample_result = wandb.Image(sample_t, caption="epoch {}".format(epoch))
@@ -244,4 +267,5 @@ if __name__ == '__main__':
         if (epoch + 1) % args.save_interval == 0: 
             if not os.path.exists("models"):
                 os.makedirs("models")
-            torch.save(model.state_dict(), 'models/{}_{}.pth'.format(model_name, epoch))
+            # torch.save(model.state_dict(), 'models/{}_{}.pth'.format(model_name, epoch))
+            torch.save(model.state_dict(), 'models/conditional_pixelcnn.pth'.format(model_name, epoch))
