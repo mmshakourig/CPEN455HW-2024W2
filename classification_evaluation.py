@@ -22,10 +22,19 @@ NUM_CLASSES = len(my_bidict)
 
 #TODO: Begin of your code
 def get_label(model, model_input, device):
-    # Write your code here, replace the random classifier with your trained model
-    # and return the predicted label, which is a tensor of shape (batch_size,)
-    answer = model(model_input, device)
-    return answer
+    num_classes = 4   
+    batch_size = model_input.size(0)
+    log_likelihood = torch.zeros(batch_size, num_classes, device=device)
+    
+    for c in range(num_classes):
+        labels = torch.full((batch_size,), c, dtype=torch.long, device=device)
+        model_output = model(model_input, labels)
+        nll = discretized_mix_logistic_classify(model_input, model_output) #I modified loss to give output for each picture
+        log_likelihood[:, c] = -nll  #negative log likelihood
+
+    # I'm now selecting the class with the highest log likelihood==>(lowest nll)
+    _, predicted_labels = log_likelihood.max(1)
+    return predicted_labels
 # End of your code
 
 def classifier(model, data_loader, device):
@@ -34,7 +43,8 @@ def classifier(model, data_loader, device):
     for batch_idx, item in enumerate(tqdm(data_loader)):
         model_input, categories = item
         model_input = model_input.to(device)
-        original_label = [my_bidict[item] for item in categories]
+        # original_label = [my_bidict[item] for item in categories]
+        original_label = [item for item in categories]
         original_label = torch.tensor(original_label, dtype=torch.int64).to(device)
         answer = get_label(model, model_input, device)
         correct_num = torch.sum(answer == original_label)
@@ -56,7 +66,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     pprint(args.__dict__)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':False}
+    kwargs = {'num_workers':1, 'pin_memory':True, 'drop_last':True}
 
     ds_transforms = transforms.Compose([transforms.Resize((32, 32)), rescaling])
     dataloader = torch.utils.data.DataLoader(CPEN455Dataset(root_dir=args.data_dir, 
@@ -68,7 +78,8 @@ if __name__ == '__main__':
 
     #TODO:Begin of your code
     #You should replace the random classifier with your trained model
-    model = random_classifier(NUM_CLASSES)
+    model = PixelCNN(nr_resnet=1, nr_filters=40, nr_logistic_mix=5, input_channels=3, num_classes=4)
+    model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     #End of your code
     
     model = model.to(device)
