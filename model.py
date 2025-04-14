@@ -52,7 +52,7 @@ class PixelCNNLayer_down(nn.Module):
 
 class PixelCNN(nn.Module):
     def __init__(self, nr_resnet=5, nr_filters=80, nr_logistic_mix=10,
-                    resnet_nonlinearity='concat_elu', input_channels=3):
+                    resnet_nonlinearity='concat_elu', input_channels=3, num_classes=4):
         super(PixelCNN, self).__init__()
         if resnet_nonlinearity == 'concat_elu' :
             self.resnet_nonlinearity = lambda x : concat_elu(x)
@@ -62,6 +62,7 @@ class PixelCNN(nn.Module):
         self.nr_filters = nr_filters
         self.input_channels = input_channels
         self.nr_logistic_mix = nr_logistic_mix
+        self.embed_label  = nn.Embedding(num_classes, 32 * 32 * self.nr_filters)
         self.right_shift_pad = nn.ZeroPad2d((1, 0, 0, 0))
         self.down_shift_pad  = nn.ZeroPad2d((0, 0, 1, 0))
 
@@ -97,7 +98,7 @@ class PixelCNN(nn.Module):
         self.init_padding = None
 
 
-    def forward(self, x, sample=False):
+    def forward(self, x, labels=None, sample=False):
         # similar as done in the tf repo :
         if self.init_padding is not sample:
             xs = [int(y) for y in x.size()]
@@ -114,6 +115,14 @@ class PixelCNN(nn.Module):
         x = x if sample else torch.cat((x, self.init_padding), 1)
         u_list  = [self.u_init(x)]
         ul_list = [self.ul_init[0](x) + self.ul_init[1](x)]
+        
+        B,C,H,W = (u_list[-1]).shape
+        if labels is not None:
+            label_emd = self.embed_label(labels)
+            label_emd = label_emd.view(B, C, 32, 32)
+            u_list[-1] = u_list[-1] + label_emd
+            ul_list[-1] = ul_list[-1] + label_emd
+            
         for i in range(3):
             # resnet block
             u_out, ul_out = self.up_layers[i](u_list[-1], ul_list[-1])
@@ -152,9 +161,9 @@ class random_classifier(nn.Module):
         self.fc = nn.Linear(3, NUM_CLASSES)
         print("Random classifier initialized")
         # create a folder
-        if os.path.join(os.path.dirname(__file__), 'models') not in os.listdir():
-            os.mkdir(os.path.join(os.path.dirname(__file__), 'models'))
-        torch.save(self.state_dict(), os.path.join(os.path.dirname(__file__), 'models/conditional_pixelcnn.pth'))
+        if 'models' not in os.listdir():
+            os.mkdir('models')
+        torch.save(self.state_dict(), 'models/conditional_pixelcnn_v2.pth')
     def forward(self, x, device):
         return torch.randint(0, self.NUM_CLASSES, (x.shape[0],)).to(device)
     
