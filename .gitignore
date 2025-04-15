@@ -6,6 +6,7 @@ models
 data/MNIST
 data/Imagenet*
 samples/*.jpg
+report/
 
 projvenv
 test.ipynb
