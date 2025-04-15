@@ -35,27 +35,20 @@ def get_label(model, model_input, device):
 def classifier(model, data_loader, device, dataset):
     model.eval()
     preds = []
-    # logits = []
+
+    # enumerate the data_loader and get the model input and labels for each batch
     for _, item in enumerate(tqdm(data_loader)):
         model_input, _ = item
         model_input = model_input.to(device)
         pred = get_label(model, model_input, device)
         preds.append(pred)
-        # logits = np.append(logits, losses.cpu().detach().numpy())
     preds = torch.cat(preds, -1)
 
-    # Reshape the logits array
-    # logits = logits.reshape(-1, NUM_CLASSES)
-    # print(logits.shape)
-    # print(logits)
-    # np.save('test_logits.npy', logits)
-
     # write the final result csv file
-    with open("submission.csv", mode='w', newline='') as file:
+    with open("test_submission.csv", mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['id', 'label'])
         for path, label in zip(dataset.samples, preds):
-            name = os.path.basename(path[0])
+            name = os.path.basename(str("test/" + path[0]))
             writer.writerow([name, label.item()])
 
 if __name__ == '__main__':
@@ -78,7 +71,7 @@ if __name__ == '__main__':
                                                             mode = args.mode, 
                                                             transform=ds_transforms), 
                                              batch_size=args.batch_size, 
-                                             shuffle=False, 
+                                             shuffle=False, # do not shuffle for test set
                                              **kwargs)
 
     #TODO:Begin of your code
@@ -97,8 +90,6 @@ if __name__ == '__main__':
     else:
         raise FileNotFoundError(f"Model file not found at {model_path}")
     model.eval()
-
-    print('model parameters loaded')
 
     dataset = CPEN455Dataset(root_dir=args.data_dir, mode=args.mode, transform=ds_transforms)
     classifier(model = model, data_loader = dataloader, device = device, dataset=dataset)
