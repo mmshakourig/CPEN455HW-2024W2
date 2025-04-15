@@ -48,7 +48,7 @@ def classifier(model, data_loader, device, dataset):
     with open("test_submission.csv", mode='w', newline='') as file:
         writer = csv.writer(file)
         for path, label in zip(dataset.samples, preds):
-            name = os.path.basename(str("test/" + path[0]))
+            name = path[0]
             writer.writerow([name, label.item()])
 
 if __name__ == '__main__':
