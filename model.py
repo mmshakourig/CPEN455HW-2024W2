@@ -1,6 +1,11 @@
 import torch.nn as nn
 from layers import *
 
+from bidict import bidict
+my_bidict = bidict({'Class0': 0, 
+                    'Class1': 1,
+                    'Class2': 2,
+                    'Class3': 3})
 
 class PixelCNNLayer_up(nn.Module):
     def __init__(self, nr_resnet, nr_filters, resnet_nonlinearity):
@@ -52,7 +57,7 @@ class PixelCNNLayer_down(nn.Module):
 
 class PixelCNN(nn.Module):
     def __init__(self, nr_resnet=5, nr_filters=80, nr_logistic_mix=10,
-                    resnet_nonlinearity='concat_elu', input_channels=3):
+                    resnet_nonlinearity='concat_elu', input_channels=3,num_classes=4,embedding_dim=32*32):
         super(PixelCNN, self).__init__()
         if resnet_nonlinearity == 'concat_elu' :
             self.resnet_nonlinearity = lambda x : concat_elu(x)
@@ -66,7 +71,7 @@ class PixelCNN(nn.Module):
         self.down_shift_pad  = nn.ZeroPad2d((0, 0, 1, 0))
 
         down_nr_resnet = [nr_resnet] + [nr_resnet + 1] * 2
-        self.down_layers = nn.ModuleList([PixelCNNLayer_down(down_nr_resnet[i], nr_filters,
+        self.   down_layers = nn.ModuleList([PixelCNNLayer_down(down_nr_resnet[i], nr_filters,
                                                 self.resnet_nonlinearity) for i in range(3)])
 
         self.up_layers   = nn.ModuleList([PixelCNNLayer_up(nr_resnet, nr_filters,
@@ -96,8 +101,22 @@ class PixelCNN(nn.Module):
         self.nin_out = nin(nr_filters, num_mix * nr_logistic_mix)
         self.init_padding = None
 
+        # conditional embedding layers added for the class labels
+        self.embeddings = nn.Embedding(num_classes, 3*32*32)
+        self.embeddings_u_up = nn.Embedding(num_classes, nr_filters*32*32)
+        self.embeddings_ul_up = nn.Embedding(num_classes, nr_filters*32*32)
+        # downscale embeddings to 8x8
+        self.embeddings_u_down = nn.Embedding(num_classes, nr_filters*8*8)
+        self.embeddings_ul_down = nn.Embedding(num_classes, nr_filters*8*8)
+        self.embeddings_u = nn.Embedding(num_classes, embedding_dim)
+        self.embeddings_ul = nn.Embedding(num_classes, embedding_dim)
 
-    def forward(self, x, sample=False):
+    def forward(self, x, labels, sample=False):
+        if labels[0] != 'Unknown': # from dataset names
+            if type(labels[0]) == str:
+                labels = [my_bidict[item] for item in labels]
+            embeddings = torch.stack([self.embeddings.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),3,32,32)
+            x = x + embeddings
         # similar as done in the tf repo :
         if self.init_padding is not sample:
             xs = [int(y) for y in x.size()]
@@ -112,8 +131,20 @@ class PixelCNN(nn.Module):
 
         ###      UP PASS    ###
         x = x if sample else torch.cat((x, self.init_padding), 1)
-        u_list  = [self.u_init(x)]
-        ul_list = [self.ul_init[0](x) + self.ul_init[1](x)]
+        if labels[0] != 'Unknown':
+            if type(labels[0]) == str:
+                labels = [my_bidict[item] for item in labels]
+            
+            test = torch.stack([self.embeddings_u_up.weight.clone()[class_index] for class_index in labels])
+            embeddings_u_up = torch.stack([self.embeddings_u_up.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),self.nr_filters,32,32)
+            embeddings_ul_up = torch.stack([self.embeddings_ul_up.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),self.nr_filters,32,32)
+            u_list  = [self.u_init(x)+embeddings_u_up]
+            ul_list = [self.ul_init[0](x) + self.ul_init[1](x) + embeddings_ul_up]
+            
+        else:
+            u_list  = [self.u_init(x)]
+            ul_list = [self.ul_init[0](x) + self.ul_init[1](x)]
+
         for i in range(3):
             # resnet block
             u_out, ul_out = self.up_layers[i](u_list[-1], ul_list[-1])
@@ -126,9 +157,17 @@ class PixelCNN(nn.Module):
                 ul_list += [self.downsize_ul_stream[i](ul_list[-1])]
 
         ###    DOWN PASS    ###
-        u  = u_list.pop()
-        ul = ul_list.pop()
+        if labels[0] != 'Unknown':
+            if type(labels[0]) == str:
+                labels = [my_bidict[item] for item in labels]
+            embeddings_u_down = torch.stack([self.embeddings_u_down.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),self.nr_filters,8,8)
+            embeddings_ul_down = torch.stack([self.embeddings_ul_down.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),self.nr_filters,8,8)
+            u  = u_list.pop() + embeddings_u_down
+            ul = ul_list.pop() + embeddings_ul_down
 
+        else:
+            u  = u_list.pop()
+            ul = ul_list.pop()
         for i in range(3):
             # resnet block
             u, ul = self.down_layers[i](u, ul, u_list, ul_list)
@@ -138,7 +177,16 @@ class PixelCNN(nn.Module):
                 u  = self.upsize_u_stream[i](u)
                 ul = self.upsize_ul_stream[i](ul)
 
-        x_out = self.nin_out(F.elu(ul))
+        # x_out = self.nin_out(F.elu(u))
+        if labels[0] != 'Unknown':
+            if type(labels[0]) == str:
+                labels = [my_bidict[item] for item in labels]
+            embeddings_u = torch.stack([self.embeddings_u.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),1,32,32)
+            embeddings_ul = torch.stack([self.embeddings_ul.weight.clone()[class_index] for class_index in labels]).unsqueeze(-1).unsqueeze(-1).view(len(labels),1,32,32)
+            # x = x + embeddings
+            x_out = self.nin_out(F.elu(ul+embeddings_ul))
+        else:
+            x_out = self.nin_out(F.elu(ul))
 
         assert len(u_list) == len(ul_list) == 0, pdb.set_trace()
 
@@ -152,9 +200,9 @@ class random_classifier(nn.Module):
         self.fc = nn.Linear(3, NUM_CLASSES)
         print("Random classifier initialized")
         # create a folder
-        if os.path.join(os.path.dirname(__file__), 'models') not in os.listdir():
-            os.mkdir(os.path.join(os.path.dirname(__file__), 'models'))
-        torch.save(self.state_dict(), os.path.join(os.path.dirname(__file__), 'models/conditional_pixelcnn.pth'))
+        if 'models' not in os.listdir():
+            os.mkdir('models')
+        torch.save(self.state_dict(), 'models/conditional_pixelcnn.pth')
     def forward(self, x, device):
         return torch.randint(0, self.NUM_CLASSES, (x.shape[0],)).to(device)
     

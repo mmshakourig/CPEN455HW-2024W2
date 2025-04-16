@@ -22,21 +22,47 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
         
     deno =  args.batch_size * np.prod(args.obs) * np.log(2.)        
     loss_tracker = mean_tracker()
+    acc_tracker = ratio_tracker()
     
     for batch_idx, item in enumerate(tqdm(data_loader)):
-        model_input, _ = item
+        model_input, categories = item
         model_input = model_input.to(device)
-        model_output = model(model_input)
+        if mode== 'val' or mode=='test':
+            with torch.no_grad():
+                model_output = model(model_input,categories)
+        else:
+            model_output = model(model_input,categories)
         loss = loss_op(model_input, model_output)
         loss_tracker.update(loss.item()/deno)
         if mode == 'training':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        elif mode == 'val':
+            original_label = [my_bidict[item] for item in categories]
+            original_label = torch.tensor(original_label, dtype=torch.int64).to(device)
+            answer = get_label(model, model_input, device)
+            correct_num = torch.sum(answer == original_label)
+            acc_tracker.update(correct_num.item(), model_input.shape[0])
         
     if args.en_wandb:
         wandb.log({mode + "-Average-BPD" : loss_tracker.get_mean()})
         wandb.log({mode + "-epoch": epoch})
+        if mode == 'val':
+            wandb.log({mode + "-classification-accuracy": acc_tracker.get_ratio()})
+
+def get_label(model, model_input, device):
+    with torch.no_grad():
+        batch_size = model_input.shape[0]
+        best_loss = [float('inf')]*batch_size
+        best_ans = [0]*batch_size
+        for i in range(4):
+            curr_loss = discretized_mix_logistic_loss(model_input, model(model_input,[i]*batch_size),sum_batch=False)
+            for j in range(batch_size):
+                if curr_loss[j] < best_loss[j]:
+                    best_ans[j] = i
+                    best_loss[j] = curr_loss[j]
+        return torch.tensor(best_ans, device=device)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -66,11 +92,11 @@ if __name__ == '__main__':
                         help='Observation shape')
     
     # model
-    parser.add_argument('-q', '--nr_resnet', type=int, default=1,
+    parser.add_argument('-q', '--nr_resnet', type=int, default=1, # 5
                         help='Number of residual blocks per stage of the model')
-    parser.add_argument('-n', '--nr_filters', type=int, default=40,
+    parser.add_argument('-n', '--nr_filters', type=int, default=40, #160
                         help='Number of filters to use across the model. Higher = larger model.')
-    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=5,
+    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=5, #10
                         help='Number of logistic components in the mixture. Higher = more flexible model')
     parser.add_argument('-l', '--lr', type=float,
                         default=0.0002, help='Base learning rate')
@@ -88,6 +114,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     pprint(args.__dict__)
     check_dir_and_create(args.save_dir)
+    print("Is Cuda available?: " + str(torch.cuda.is_available()))
     
     # reproducibility
     torch.manual_seed(args.seed)
@@ -122,7 +149,7 @@ if __name__ == '__main__':
     #Reminder: if you have patience to read code line by line, you should notice this comment. here is the reason why we set num_workers to 0:
     #In order to avoid pickling errors with the dataset on different machines, we set num_workers to 0.
     #If you are using ubuntu/linux/colab, and find that loading data is too slow, you can set num_workers to 1 or even bigger.
-    kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':True}
+    kwargs = {'num_workers':1, 'pin_memory':True, 'drop_last':True}
 
     # set data
     if "mnist" in args.dataset:
@@ -203,14 +230,14 @@ if __name__ == '__main__':
         
         # decrease learning rate
         scheduler.step()
-        train_or_test(model = model,
-                      data_loader = test_loader,
-                      optimizer = optimizer,
-                      loss_op = loss_op,
-                      device = device,
-                      args = args,
-                      epoch = epoch,
-                      mode = 'test')
+        # train_or_test(model = model,
+        #               data_loader = test_loader,
+        #               optimizer = optimizer,
+        #               loss_op = loss_op,
+        #               device = device,
+        #               args = args,
+        #               epoch = epoch,
+        #               mode = 'test')
         
         train_or_test(model = model,
                       data_loader = val_loader,
@@ -221,25 +248,26 @@ if __name__ == '__main__':
                       epoch = epoch,
                       mode = 'val')
         
-        if epoch % args.sampling_interval == 0:
-            print('......sampling......')
-            sample_t = sample(model, args.sample_batch_size, args.obs, sample_op)
-            sample_t = rescaling_inv(sample_t)
-            save_images(sample_t, args.sample_dir)
-            sample_result = wandb.Image(sample_t, caption="epoch {}".format(epoch))
+        # if epoch % args.sampling_interval == 0:
+        #     print('......sampling......')
+        #     random_labels = np.random.randint(0, 4, size=args.sample_batch_size)
+        #     sample_t = sample(model, args.sample_batch_size, args.obs, sample_op,[0,1,2,3])
+        #     sample_t = rescaling_inv(sample_t)
+        #     save_images(sample_t, args.sample_dir)
+        #     sample_result = wandb.Image(sample_t, caption="epoch {}".format(epoch))
             
-            gen_data_dir = args.sample_dir
-            ref_data_dir = args.data_dir +'/test'
-            paths = [gen_data_dir, ref_data_dir]
-            try:
-                fid_score = calculate_fid_given_paths(paths, 32, device, dims=192)
-                print("Dimension {:d} works! fid score: {}".format(192, fid_score))
-            except:
-                print("Dimension {:d} fails!".format(192))
+        #     gen_data_dir = args.sample_dir
+        #     ref_data_dir = args.data_dir +'/test'
+        #     paths = [gen_data_dir, ref_data_dir]
+            # try:
+            #     fid_score = calculate_fid_given_paths(paths, 32, device, dims=192)
+            #     print("Dimension {:d} works! fid score: {}".format(192, fid_score))
+            # except:
+            #     print("Dimension {:d} fails!".format(192))
                 
-            if args.en_wandb:
-                wandb.log({"samples": sample_result,
-                            "FID": fid_score})
+            # if args.en_wandb:
+            #     wandb.log({"samples": sample_result,
+            #                 "FID": fid_score})
         
         if (epoch + 1) % args.save_interval == 0: 
             if not os.path.exists("models"):
