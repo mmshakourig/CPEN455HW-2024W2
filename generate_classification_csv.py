@@ -69,6 +69,7 @@ def classifier(model, data_loader, dataset, device):
         writer = csv.writer (file)
         for image_path, answer in zip(dataset.samples, save_answers):
             img_name = os.path.basename(image_path[0])
+            img_name = "test/" + img_name
             writer.writerow([img_name, answer])
         print("Labels saved to hf_submission.csv")
         
