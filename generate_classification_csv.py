@@ -65,12 +65,12 @@ def classifier(model, data_loader, dataset, device):
 
     # Generated using Copilot prompt: "save all_labels list to csv"
     save_answers = np.concatenate(all_labels, axis=0)
-    with open("submission.csv", mode='w', newline='') as file:
+    with open("hf_submission.csv", mode='w', newline='') as file:
         writer = csv.writer (file)
         for image_path, answer in zip(dataset.samples, save_answers):
             img_name = os.path.basename(image_path[0])
             writer.writerow([img_name, answer])
-        print("Labels saved to submission.csv")
+        print("Labels saved to hf_submission.csv")
         
 
 if __name__ == '__main__':
