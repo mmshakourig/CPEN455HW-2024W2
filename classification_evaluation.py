@@ -22,10 +22,22 @@ NUM_CLASSES = len(my_bidict)
 
 #TODO: Begin of your code
 def get_label(model, model_input, device):
-    # Write your code here, replace the random classifier with your trained model
-    # and return the predicted label, which is a tensor of shape (batch_size,)
-    answer = model(model_input, device)
-    return answer
+    batch_size = model_input.shape[0]
+    # initializing best losses and best labels for each sample in the batch
+    best_losses = [float('inf')]*batch_size
+    best_labels = [0]*batch_size
+    # iterating through each class
+    for category in range(NUM_CLASSES):
+        # compute loss with modified no_sum_batch option
+        loss = discretized_mix_logistic_loss(model_input, model(model_input, batch_size*[category]), sum_batch=False)
+        for j in range(batch_size):
+            if loss[j] < best_losses[j]:
+                # update best label and loss if current loss is smaller
+                best_labels[j] = category
+                best_losses[j] = loss[j]
+    # return as tensor (Copilot auto-complete suggestion - no prompt)
+    label = torch.tensor(best_labels, device=device).detach()
+    return label
 # End of your code
 
 def classifier(model, data_loader, device):
@@ -68,7 +80,7 @@ if __name__ == '__main__':
 
     #TODO:Begin of your code
     #You should replace the random classifier with your trained model
-    model = random_classifier(NUM_CLASSES)
+    model = PixelCNN(nr_resnet=2, nr_filters=100, input_channels=3, nr_logistic_mix=5) # final model params
     #End of your code
     
     model = model.to(device)
