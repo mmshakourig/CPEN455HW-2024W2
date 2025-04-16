@@ -26,12 +26,16 @@ def my_sample(model, gen_data_dir, device, sample_batch_size=25, obs=(3,32,32)):
     model.eval()  
     for label in my_bidict:
         print(f"Label: {label}")
+        # get label from the bidict and convert it to the corresponding index
         labels = torch.full((sample_batch_size,), my_bidict[label], dtype=torch.long, device=device)
         input_tensor = torch.zeros(sample_batch_size, *obs, device=device)
         with torch.no_grad():
             output = model(input_tensor, labels=labels, sample=True)
+            # we use the sample function to get the generated images 
             images = sample_from_discretized_mix_logistic(output, 5)  
             images = rescaling_inv(images)   
+
+            # save the generated images using save images which we modified in utils
             save_images(images, gen_data_dir, label=label)
 # End of your code
 
@@ -54,7 +58,7 @@ if __name__ == "__main__":
     #Load your model and generate images in the gen_data_dir, feel free to modify the model
     model = PixelCNN(nr_resnet=1, nr_filters=40, input_channels=3, nr_logistic_mix=5)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.load_state_dict(torch.load('models/conditional_pixelcnn_v2.pth'))
+    model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     model = model.to(device)
     model = model.eval()
     #End of your code

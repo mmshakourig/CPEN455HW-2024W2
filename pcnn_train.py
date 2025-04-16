@@ -28,9 +28,12 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
         # label = label.to(device)
         print(type(label))
         label = [my_bidict[item] for item in label]
+        # convert label to tensor and move to device for model compatibility
         label = torch.tensor(label, dtype=torch.int64).to(device)
         model_input = model_input.to(device)
         model_output = model(model_input, label)
+
+        # logistic loss function
         loss = loss_op(model_input, model_output)
         loss_tracker.update(loss.item()/deno)
         if mode == 'training':
@@ -43,7 +46,7 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
         wandb.log({mode + "-epoch": epoch})
 
 if __name__ == '__main__':
-    print("Training model-2v")
+    print("Training model-2v") # helps make sure right file is running in colab
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-w', '--en_wandb', type=bool, default=False,
@@ -71,11 +74,11 @@ if __name__ == '__main__':
                         help='Observation shape')
     
     # model
-    parser.add_argument('-q', '--nr_resnet', type=int, default=5,
+    parser.add_argument('-q', '--nr_resnet', type=int, default=1, # running with 5 for this model version
                         help='Number of residual blocks per stage of the model')
-    parser.add_argument('-n', '--nr_filters', type=int, default=160,
+    parser.add_argument('-n', '--nr_filters', type=int, default=40, # running with 160 filters fr this model version
                         help='Number of filters to use across the model. Higher = larger model.')
-    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=10,
+    parser.add_argument('-m', '--nr_logistic_mix', type=int, default=5, # running to 10 for this model version
                         help='Number of logistic components in the mixture. Higher = more flexible model')
     parser.add_argument('-l', '--lr', type=float,
                         default=0.0002, help='Base learning rate')
@@ -205,6 +208,7 @@ if __name__ == '__main__':
         
         # decrease learning rate
         scheduler.step()
+        # commenting out the test set evaluation as it doesnt have labels
         # train_or_test(model = model,
         #               data_loader = test_loader,
         #               optimizer = optimizer,

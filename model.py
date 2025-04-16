@@ -62,6 +62,8 @@ class PixelCNN(nn.Module):
         self.nr_filters = nr_filters
         self.input_channels = input_channels
         self.nr_logistic_mix = nr_logistic_mix
+
+        # add the label embedding to the model
         self.embed_label  = nn.Embedding(num_classes, 32 * 32 * self.nr_filters)
         self.right_shift_pad = nn.ZeroPad2d((1, 0, 0, 0))
         self.down_shift_pad  = nn.ZeroPad2d((0, 0, 1, 0))
@@ -115,9 +117,13 @@ class PixelCNN(nn.Module):
         x = x if sample else torch.cat((x, self.init_padding), 1)
         u_list  = [self.u_init(x)]
         ul_list = [self.ul_init[0](x) + self.ul_init[1](x)]
-        
-        B,C,H,W = (u_list[-1]).shape
+
+        # here, we use the last element of the list to store the label embedding
+        # this is because we need to add the label embedding to the last element of the list
+        B,C,H,W = (u_list[-1]).shape # extratc (batch, channels, height, width)
         if labels is not None:
+            # labels = labels.view(B, 1, 1, 1).expand(-1, -1, H, W)
+            # we need to expand the labels to the same size as the input
             label_emd = self.embed_label(labels)
             label_emd = label_emd.view(B, C, 32, 32)
             u_list[-1] = u_list[-1] + label_emd
@@ -163,7 +169,7 @@ class random_classifier(nn.Module):
         # create a folder
         if 'models' not in os.listdir():
             os.mkdir('models')
-        torch.save(self.state_dict(), 'models/conditional_pixelcnn_v2.pth')
+        torch.save(self.state_dict(), 'models/conditional_pixelcnn.pth')
     def forward(self, x, device):
         return torch.randint(0, self.NUM_CLASSES, (x.shape[0],)).to(device)
     

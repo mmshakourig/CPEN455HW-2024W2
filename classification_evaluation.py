@@ -22,17 +22,20 @@ NUM_CLASSES = len(my_bidict)
 
 #TODO: Begin of your code
 def get_label(model, model_input, device):
-    num_classes = 4   
+    num_classes = 4
+    # get the batch size of the model input
     batch_size = model_input.size(0)
     log_likelihood = torch.zeros(batch_size, num_classes, device=device)
     
     for c in range(num_classes):
+        # get label from the bidict and convert it to the corresponding index
         labels = torch.full((batch_size,), c, dtype=torch.long, device=device)
         model_output = model(model_input, labels)
-        nll = discretized_mix_logistic_classify(model_input, model_output) #I modified loss to give output for each picture
-        log_likelihood[:, c] = -nll  #negative log likelihood
+        # use modified loss to get output for each picture (see utils.py)
+        neg_log_like = discretized_mix_logistic_classify(model_input, model_output)
+        log_likelihood[:, c] = -neg_log_like 
 
-    # I'm now selecting the class with the highest log likelihood==>(lowest nll)
+    # select the class with the highest log likelihood (lowest neg_log_like)
     _, predicted_labels = log_likelihood.max(1)
     return predicted_labels
 # End of your code
@@ -79,13 +82,13 @@ if __name__ == '__main__':
     #TODO:Begin of your code
     #You should replace the random classifier with your trained model
     model = PixelCNN(nr_resnet=1, nr_filters=40, nr_logistic_mix=5, input_channels=3, num_classes=4)
-    # model.load_state_dict(torch.load('models/conditional_pixelcnn_v2.pth'))
+    # model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     #End of your code
     
     model = model.to(device)
     #Attention: the path of the model is fixed to './models/conditional_pixelcnn.pth'
     #You should save your model to this path
-    model_path = os.path.join(os.path.dirname(__file__), 'models/conditional_pixelcnn_v2.pth')
+    model_path = os.path.join(os.path.dirname(__file__), 'models/conditional_pixelcnn.pth')
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path))
         print('model parameters loaded')
