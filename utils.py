@@ -33,7 +33,8 @@ def log_prob_from_logits(x):
     return x - m - torch.log(torch.sum(torch.exp(x - m), dim=axis, keepdim=True))
 
 
-# this is the same as the one in the original code, but we need to redefine it here to avoid circular imports
+# I slightly modified the original function from the original discretized mix logistic function to avoid circular imports
+# and to get the log likelihood of the data given the model output
 def discretized_mix_logistic_classify(x, l):
     """ log-likelihood for mixture of discretized logistics, assumes the data has been rescaled to [-1,1] interval """
     # Pytorch ordering
@@ -243,7 +244,7 @@ def right_shift(x, pad=None):
     pad = nn.ZeroPad2d((1, 0, 0, 0)) if pad is None else pad
     return pad(x)
 
-
+# I modified the sample function to customize it for the conditional pixelcnn
 def sample(model, sample_batch_size, obs, sample_op):
     model.train(False)
     with torch.no_grad():
@@ -252,7 +253,9 @@ def sample(model, sample_batch_size, obs, sample_op):
         for i in range(obs[1]):
             for j in range(obs[2]):
                 data_v = data
-                out   = model(data_v, sample=True)
+                # data_v[:, :, i, j] = obs[0][:, :, i, j]
+                # data_v[:, :, i, j] = obs[0][:, :, i, j].unsqueeze(1).expand(sample_batch_size, obs[0].shape[1], 1, 1)
+                out = model(data_v, sample=True)
                 out_sample = sample_op(out)
                 data[:, :, i, j] = out_sample.data[:, :, i, j]
     return data
@@ -291,6 +294,7 @@ def save_images(tensor, images_folder_path, label=''):
     os.makedirs(images_folder_path, exist_ok=True)
     for i, img_tensor in enumerate(tensor):
         # img = Image.fromarray((img_tensor.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8), mode='RGB')
+        # save the image using torchvision
         img = torchvision.transforms.functional.to_pil_image(img_tensor)
         img_path = os.path.join(images_folder_path, f"{label}_image_{i+1:02d}.jpg")  
         img.save(img_path)
