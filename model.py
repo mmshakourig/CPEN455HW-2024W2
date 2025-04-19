@@ -1,6 +1,7 @@
 import torch.nn as nn
 from layers import *
 
+# bring in the classes like in dataset.py
 from bidict import bidict
 my_bidict = bidict({'Class0': 0, 
                     'Class1': 1,

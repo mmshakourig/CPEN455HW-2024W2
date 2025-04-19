@@ -2,10 +2,10 @@
 .idea/
 wandb
 *log
-models
+# models
 data/MNIST
 data/Imagenet*
-samples/*.jpg
+# samples/*.jpg
 report/
 
 projvenv

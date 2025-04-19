@@ -97,7 +97,7 @@ def discretized_mix_logistic_loss(x, l, sum_batch=True):
     cond             = (x < -0.999).float()
     log_probs        = cond * log_cdf_plus + (1. - cond) * inner_out
     log_probs        = torch.sum(log_probs, dim=3) + log_prob_from_logits(logit_probs)
-    # add comments to explain the modification
+    # I modified the log_probs to enable a non-batch summed version of the loss function
     if not sum_batch:
         return -torch.sum(log_sum_exp(log_probs),dim=(1,2))
     return -torch.sum(log_sum_exp(log_probs))
@@ -175,7 +175,7 @@ def right_shift(x, pad=None):
     pad = nn.ZeroPad2d((1, 0, 0, 0)) if pad is None else pad
     return pad(x)
 
-
+# had to modify the function to add class label as input to the model
 def sample(model, sample_batch_size, obs, sample_op, labels):
     model.train(False)
     with torch.no_grad():
@@ -184,7 +184,7 @@ def sample(model, sample_batch_size, obs, sample_op, labels):
         for i in range(obs[1]):
             for j in range(obs[2]):
                 data_v = data
-                out = model(data_v, labels, sample=True) # add sample option to model
+                out = model(data_v, labels, sample=True) # added class label to model
                 out_sample = sample_op(out)
                 data[:, :, i, j] = out_sample.data[:, :, i, j]
     return data
